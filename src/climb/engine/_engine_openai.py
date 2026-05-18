@@ -33,7 +33,7 @@ from ._engine import (
     PrivacyModeParameter,
 )
 from ._openai_token_estimation import estimate_prompt_tokens_with_tools
-from .const import ALLOWED_MODELS, MODEL_MAX_MESSAGE_TOKENS
+from .const import ALLOWED_MODELS
 
 MAX_TOOL_CALL_LOGS_LENGTH = 300
 
@@ -52,6 +52,8 @@ class OpenAIEngineBase(EngineBase):
         conda_path: Optional[str] = None,
         *,
         api_key: str,
+        base_url: Optional[str] = None,
+        provider_id: Optional[str] = None,
         # ---
         **kwargs: Any,
     ):
@@ -61,17 +63,24 @@ class OpenAIEngineBase(EngineBase):
             conda_path=conda_path,
         )
 
+        # Provider configuration:
+        self.provider_id = provider_id or "openai"
+        self.base_url = base_url
+
         # Prepare the OpenAI client:
         self.api_key = api_key
-        self.client = self.initialize_client(api_key=api_key)
+        self.client = self.initialize_client(api_key=api_key, base_url=base_url)
 
         # Currently the `guardrail_with_approval` mode is not implemented.
         if session.engine_params["privacy_mode"] == "guardrail_with_approval":
             raise NotImplementedError("Privacy mode 'guardrail_with_approval' not yet implemented.")
 
     def _before_define_agents_hook(self) -> None:
+        from ._providers import get_provider
+
+        provider = get_provider(self.provider_id)
         # Useful constants:
-        self.max_tokens_per_message = MODEL_MAX_MESSAGE_TOKENS[self.engine_params["model_id"]]  # type: ignore
+        self.max_tokens_per_message = provider.get_max_message_tokens(self.engine_params["model_id"])
 
     @staticmethod
     def supports_streaming_token_count() -> bool:
@@ -109,16 +118,20 @@ class OpenAIEngineBase(EngineBase):
 
     @staticmethod
     def get_engine_parameters() -> List[EngineParameter]:
+        from ._providers import get_provider
+
+        provider = get_provider()
         return [
             EngineParameter(
                 name="model_id",
                 description=(
-                    "OpenAI model ID to use for the research session. "
-                    "See [documentation](https://platform.openai.com/docs/models/overview)."
+                    "Model ID to use for the research session. See your provider's documentation for available models."
                 ),
                 kind="enum",
-                enum_values=ALLOWED_MODELS,
-                default="gpt-4-0125-preview",
+                enum_values=provider.allowed_models,
+                default=provider.default_model,
+                value_set_by_static_method="set_model_id_from_provider",
+                enum_values_set_by_engine_config="set_model_enum_from_provider",
             ),
             EngineParameter(
                 name="temperature",
@@ -136,16 +149,23 @@ class OpenAIEngineBase(EngineBase):
             PrivacyModeParameter,
         ]
 
-    def initialize_client(self, api_key: str) -> Any:
-        self.client = OpenAI(api_key=api_key)
+    def initialize_client(self, api_key: str, base_url: Optional[str] = None) -> Any:
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
         return self.client
 
     def initialize_completion(self) -> Callable:
+        from ._providers import get_provider
+
+        provider = get_provider(self.provider_id)
+        kwargs: Dict[str, Any] = {
+            "model": self.engine_params["model_id"],
+            "temperature": self.engine_params["temperature"],
+        }
+        if provider.supports_streaming_usage:
+            kwargs["stream_options"] = {"include_usage": True}
         return functools.partial(
             self.client.chat.completions.create,
-            model=self.engine_params["model_id"],
-            temperature=self.engine_params["temperature"],
-            stream_options={"include_usage": True},
+            **kwargs,
         )
 
     # pylint: disable-next=unused-argument
@@ -536,6 +556,8 @@ class OpenAIEngineBase(EngineBase):
     ) -> Dict[str, Any]:
         return dict(
             api_key=self.api_key,
+            base_url=self.base_url,
+            provider_id=self.provider_id,
             engine_params=self.engine_params,
         )
 
@@ -629,6 +651,22 @@ class OpenAIEngineBase(EngineBase):
     @staticmethod
     def set_temperature_disabled(**kwargs: Any) -> bool:
         return True if "gpt-5" in kwargs["model_id"] else False
+
+    @staticmethod
+    def set_model_id_from_provider(**kwargs: Any) -> str:
+        from ._providers import get_provider
+
+        provider_id = kwargs.get("provider_id", "openai")
+        provider = get_provider(provider_id)
+        return provider.default_model
+
+    @staticmethod
+    def set_model_enum_from_provider(**kwargs: Any) -> List[str]:
+        from ._providers import get_provider
+
+        provider_id = kwargs.get("provider_id", "openai")
+        provider = get_provider(provider_id)
+        return provider.allowed_models
 
 
 class AzureOpenAIEngineMixin:

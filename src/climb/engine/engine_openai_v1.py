@@ -153,7 +153,7 @@ WORKER_CAPABILITIES_FOR_COORDINATOR = (
 
 WORKER_RULES_LONG_MESSAGES = f"""\
 #### LONG MESSAGES:
-- Your design limits you to {MAX_CHARS_REPLACE_MARKER} characters per message. 
+- Your design limits you to {MAX_CHARS_REPLACE_MARKER} characters per message.
 - In some cases, you may need to generate a longer message than this.
 - We will work around this like so:
     1. You will generate the long message in chunks that are shorter than {MAX_CHARS_REPLACE_MARKER} characters.
@@ -230,7 +230,7 @@ Context:
         name: "Set up HTML structure"
         selection_condition: None
     WEBSITE_BASICS_2:
-        name: "Add basic content structure" 
+        name: "Add basic content structure"
         selection_condition: None
     WEBSITE_STYLING_1:
         name: "Add CSS styling"
@@ -240,7 +240,7 @@ Context:
         selection_condition: "Basic CSS must be in place"
 
 - Current Plan: ["WEBSITE_BASICS_1", "WEBSITE_BASICS_2", "WEBSITE_STYLING_1"]
-- Last Episode: WEBSITE_BASICS_1 
+- Last Episode: WEBSITE_BASICS_1
 - Full Record Summary:
     * WEBSITE_BASICS_1 was completed successfully
     * User message: "Great, the HTML structure looks good. Ready for the next step."
@@ -277,7 +277,7 @@ Episode Conclusion: Keep - naturally follows completed HTML setup
 
 * === EPISODE ===
 
-- Episode ID: WEBSITE_STYLING_1 
+- Episode ID: WEBSITE_STYLING_1
 - Selection Condition: HTML structure must be complete
 - Name: Add CSS styling
 
@@ -422,7 +422,7 @@ Context:
 - Last Episode: APP_UI_1
 - Full Record Summary:
     * APP_UI_1 completed: Basic UI implemented for menu management
-    * User messages: 
+    * User messages:
         - "The UI layout works but we need something simpler - let's remove the complex animations."
         - "Also, I just realized we need user authentication - restaurant staff should login before editing menus."
 
@@ -680,7 +680,7 @@ Overall Conclusion: <Summary of cross-episode issues and specific recommendation
 
 REQUIRES PLAN UPDATE?: <YES/NO>
 
-**IMPORTANT**: Like all other steps, Step 3 must be issued as a separate message. Do not combine it with 
+**IMPORTANT**: Like all other steps, Step 3 must be issued as a separate message. Do not combine it with
 Steps 1, 2, or 4. The system needs to process each step separately.
 
 If your response format is incorrect, you will receive:
@@ -846,7 +846,7 @@ Rule 5. **EXTREMELY IMPORTANT**: DO NOT proceed beyond the subtasks that you hav
 {TASK_COMPLETED_INDICATOR} message when are done. You often make a mistake of going beyond the subtasks you have been \
 given. DO NOT DO THIS!
 Rule 6. Do not tell the user anything about your internal workings: do not talk about the WORKER or COORDINATOR \
-agents explicitly. Do not explicitly talk about issuing the special {TASK_COMPLETED_INDICATOR} message. 
+agents explicitly. Do not explicitly talk about issuing the special {TASK_COMPLETED_INDICATOR} message.
 
 
 
@@ -2027,6 +2027,8 @@ class OpenV1Engine(OpenAIEngineBase):
         conda_path: Optional[str] = None,
         *,
         api_key: str,
+        base_url: Optional[str] = None,
+        provider_id: Optional[str] = None,
         # ---
         **kwargs: Any,
     ):
@@ -2035,6 +2037,8 @@ class OpenV1Engine(OpenAIEngineBase):
             session=session,
             conda_path=conda_path,
             api_key=api_key,
+            base_url=base_url,
+            provider_id=provider_id,
         )
 
         # Set up EngineState state:
@@ -2275,9 +2279,9 @@ class OpenV1Engine(OpenAIEngineBase):
             )
         ]
         if agent.first_message_content is not None:
-            assert agent.first_message_role is not None, (
-                "First message role must be set if first message content is set."
-            )
+            assert (
+                agent.first_message_role is not None
+            ), "First message role must be set if first message content is set."
             initial_messages.append(
                 Message(
                     key=KeyGeneration.generate_message_key(),
@@ -3286,7 +3290,7 @@ class AzureOpenAIV1Engine(
             session=session,
             conda_path=conda_path,
             api_key=api_key,
-            # ---
+            # Azure uses its own client, so base_url/provider_id are not needed.
             **kwargs,
         )
 

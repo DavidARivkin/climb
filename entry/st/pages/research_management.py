@@ -1,3 +1,4 @@
+import os
 import shutil
 from typing import Any, List
 
@@ -8,6 +9,7 @@ from climb.common import create_new_session
 from climb.common.plan_files import load_plan_file
 from climb.db.tinydb_db import TinyDB_DB
 from climb.engine import AZURE_OPENAI_CONFIG_PATH, ENGINE_MAP, EngineBase, load_azure_openai_configs
+from climb.engine._providers import PROVIDERS
 from climb.ui.st_common import (
     CLIMB_ICON_IMAGE,
     PAGE_TITLES,
@@ -194,23 +196,68 @@ st.markdown("#### 🕹️ Start a new session")
 st.write("")
 st.info(
     """
-    **CliMB** supports a variety of OpenAI models. Note the following:
-    - `gpt-5`, `o1`, `o3`: These are better capacity models, and are generally *recommended* for CliMB.
-    - `gpt-4o`, `gpt-4-turbo` class of models: these are the *minimum usable* capacity models for CliMB.
-    - `*-mini` or `*-nano` classes of models, `gpt-3.5-turbo`: These are *not recommended* as they are less capable and are more likely to \
-lead to substandard results.
+    **CliMB** supports multiple LLM providers. Select a provider below and choose a model.
+    - **OpenAI**: `gpt-5`, `gpt-4o` class models are recommended.
+    - **Anthropic**: Claude Sonnet and Haiku models.
+    - **Google**: Gemini 2.5 Pro and Flash models.
+    - **Groq**: Fast inference with Llama and Mixtral models.
+    - **Ollama**: Run models locally (requires Ollama running on `localhost:11434`).
+    - **Others**: DeepSeek, Together AI, OpenRouter, Z.ai, or any OpenAI-compatible endpoint.
     """
 )
 
 with st.container(border=True):
     st.markdown("#### New session:")
-    col_new_session_name, col_engine_name = st.columns(2)
+    col_new_session_name, col_provider, col_engine_name = st.columns(3)
     with col_new_session_name:
         new_session_name = st.text_input("Session name", value="", placeholder="Leave empty for auto-generated name")
         st.session_state.new_session_settings["session_name"] = new_session_name if new_session_name != "" else None
+    with col_provider:
+        # Default provider from env var or "openai"
+        default_provider = os.environ.get("LLM_PROVIDER", "openai")
+        provider_ids = list(PROVIDERS.keys())
+        default_provider_idx = provider_ids.index(default_provider) if default_provider in provider_ids else 0
+        selected_provider_id = st.selectbox(
+            "LLM Provider",
+            options=provider_ids,
+            index=default_provider_idx,
+            format_func=lambda pid: PROVIDERS[pid].name,
+            help="Select your LLM hosting provider.",
+        )
     with col_engine_name:
         engine_name = st.selectbox("Select engine", options=ENGINE_MAP.keys())
         st.session_state.new_session_settings["engine_name"] = engine_name
+
+# Provider-specific configuration (API key override, base URL override).
+with st.container(border=True):
+    provider_config = PROVIDERS[selected_provider_id]
+    provider_overrides = {}
+
+    if "azure" not in engine_name:
+        # API Key override
+        env_api_key = os.environ.get(provider_config.env_var_api_key, "")
+        if provider_config.requires_api_key and not env_api_key:
+            api_key_override = st.text_input(
+                f"{provider_config.name} API Key",
+                type="password",
+                help=f"Enter your {provider_config.name} API key. Alternatively, set "
+                f"`{provider_config.env_var_api_key}` in your `.env` file.",
+            )
+            if api_key_override:
+                provider_overrides["api_key_override"] = api_key_override
+
+        # Base URL override
+        show_url = selected_provider_id == "openai_compatible"
+        if not show_url:
+            show_url = st.checkbox(f"Override {provider_config.name} base URL", value=False)
+        if show_url:
+            default_url = provider_config.default_base_url or ""
+            base_url_override = st.text_input(
+                "Base URL",
+                value=default_url,
+                help="The API base URL for the LLM provider.",
+            )
+            provider_overrides["base_url_override"] = base_url_override
 
 with st.container(border=True):
     st.markdown("""
@@ -226,6 +273,9 @@ with st.container(border=True):
                 "No Azure OpenAI configurations found. Please add a configuration file at `az_openai_config.yml`."
             )
             cannot_create = True
+    else:
+        # Inject provider_id so downstream parameters can react to it.
+        engine_params["provider_id"] = selected_provider_id
     # kwargs dict for params that are set by static methods. (i.e. params that have a `set_by_static_method` attribute.)
     kwargs_dict = {
         # ... Add any initial kwargs needed ...
@@ -278,17 +328,21 @@ with st.container(border=True):
         elif param.kind == "enum":
             col_, _ = st.columns([short_col_width, 1 - short_col_width])
             with col_:
+                # Use dynamically-set enum values when available (provider-specific model lists).
+                use_enum_values = (
+                    enum_value_set_dynamically if enum_value_set_dynamically is not None else param.enum_values
+                )
+                use_default = value_set_dynamically if value_set_dynamically is not None else param.default
+                # Find the index of the default in the enum list.
+                try:
+                    default_idx = list(use_enum_values).index(use_default)  # type: ignore
+                except ValueError:
+                    default_idx = 0
                 engine_params[param.name] = st.selectbox(
                     param.name,
                     help=param.description,
-                    options=param.enum_values if enum_value_set_dynamically is None else enum_value_set_dynamically,  # type: ignore
-                    index=(
-                        param.enum_values.index(
-                            value_set_dynamically if value_set_dynamically is not None else param.default
-                        )
-                        if not enum_value_set_dynamically
-                        else enum_value_set_dynamically.index(enum_value_set_dynamically[0])
-                    ),
+                    options=use_enum_values,  # type: ignore
+                    index=default_idx,
                     disabled=param_disabled,
                 )
         elif param.kind == "records":
@@ -330,6 +384,9 @@ with st.container(border=True):
 
         else:
             raise ValueError(f"Unexpected parameter kind: {param.kind}")
+
+    # Merge provider overrides into engine_params.
+    engine_params.update(provider_overrides)
     st.session_state.new_session_settings["engine_params"] = engine_params
 
 # Any extra validation:

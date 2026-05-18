@@ -1,5 +1,4 @@
 import os
-import re
 from pathlib import Path
 from typing import Any, Dict
 
@@ -49,18 +48,25 @@ def smart_testing(
     tc.print("Loading the model from file...")
     model = load_model_from_file(model_path)
 
-    # Step 3: Initialize AzureOpenAI client (replace with your actual configuration)
+    # Step 3: Initialize LLM client
     client = create_llm_client(session=session, additional_kwargs_required=additional_kwargs_required)
-    pattern = r"openai/?$"
-    base_url = re.sub(pattern, "", str(client._base_url))  # noqa: F841
+
+    is_azure = session.engine_name in ("azure_openai_v1",)
+    if is_azure:
+        azure_config = additional_kwargs_required["azure_openai_config"]
+        model_name = azure_config.deployment_name
+        api_version = getattr(client, "_api_version", None)
+    else:
+        model_name = additional_kwargs_required["engine_params"]["model_id"]
+        api_version = None
 
     config_dict = {
-        "api_type": "azure" if session.engine_name in ("azure_openai_v1",) else "openai_v1",
+        "api_type": "azure" if is_azure else "openai_v1",
         "api_base": str(client._base_url),
-        "api_version": client._api_version,
+        "api_version": api_version,
         "api_key": client.api_key,
-        "engine": additional_kwargs_required["azure_openai_config"].deployment_name,
-        "deployment_id": additional_kwargs_required["azure_openai_config"].deployment_name,
+        "engine": model_name,
+        "deployment_id": model_name,
         "temperature": additional_kwargs_required["engine_params"]["temperature"],
         "seed": 0,
     }

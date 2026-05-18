@@ -15,6 +15,7 @@ from ._engine import (
     StreamLike,
 )
 from ._initialization import ENGINE_MAP, create_engine
+from ._providers import PROVIDERS, ProviderConfig, get_provider
 from .const import ALLOWED_MODELS, MODEL_CONTEXT_SIZE, MODEL_MAX_MESSAGE_TOKENS
 
 __all__ = [
@@ -30,11 +31,14 @@ __all__ = [
     "ENGINE_MAP",
     "EngineBase",
     "get_api_key_for_azure_openai",
+    "get_provider",
     "load_azure_openai_config_item",
     "load_azure_openai_configs",
     "LoadingIndicator",
     "MODEL_CONTEXT_SIZE",
     "MODEL_MAX_MESSAGE_TOKENS",
     "PRIVACY_MODE_PARAMETER_DESCRIPTION",
+    "ProviderConfig",
+    "PROVIDERS",
     "StreamLike",
 ]
